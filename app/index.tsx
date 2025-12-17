@@ -4,7 +4,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '@/constants/theme';
 import {
@@ -60,6 +60,7 @@ export default function AuthScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
+  const insets = useSafeAreaInsets();
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [name, setName] = useState('');
@@ -100,7 +101,7 @@ export default function AuthScreen() {
           await updateProfile(credential.user, { displayName: name.trim() }).catch(() => null);
         }
       }
-      router.replace('/(tabs)');
+      router.replace('/(tabs)/home');
     } catch (err) {
       console.error(err);
       const message = getAuthErrorMessage(err);
@@ -139,17 +140,25 @@ export default function AuthScreen() {
   const primaryLabel = loading ? (isLogin ? 'Logging in...' : 'Creating account...') : isLogin ? 'Log In' : 'Create Account';
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>        
-      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />        
-      <KeyboardAvoidingView        
-        style={styles.flex}        
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}        
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}>        
-        <ScrollView        
-          bounces={false}        
-          showsVerticalScrollIndicator={false}        
-          keyboardShouldPersistTaps="handled"        
-          contentContainerStyle={styles.scrollContent}>        
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}>
+        <ScrollView
+          bounces={false}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: Math.max(insets.top + 8, 28),
+              paddingBottom: Math.max(insets.bottom + 20, 40),
+            },
+          ]}>
           <View style={styles.backgroundGlyphs} pointerEvents="none">        
             <Text style={[styles.glyph, styles.glyphPi, { color: theme.primaryMuted }]}>π</Text>        
             <Text style={[styles.glyph, styles.glyphInfinity, { color: theme.primaryMuted }]}>∞</Text>        
@@ -393,8 +402,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 32,
-    paddingTop: 28,
   },
   backgroundGlyphs: {
     position: 'absolute',
