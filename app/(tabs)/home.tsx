@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,6 +22,7 @@ const MODE_OPTIONS: ModeOption[] = [
 ];
 
 export default function HomeScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const [selectedMode, setSelectedMode] = useState<ModeOption['id']>('blitz');
@@ -66,7 +68,6 @@ export default function HomeScreen() {
             <View>
               <Text style={[styles.greeting, { color: theme.textMuted }]}>{greeting}</Text>
               <Text style={[styles.username, { color: theme.text }]}>{mockUser.name}</Text>
-              <Text style={[styles.role, { color: theme.textMuted }]}>{mockUser.role}</Text>
             </View>
           </View>
         </View>
@@ -91,10 +92,14 @@ export default function HomeScreen() {
 
           {MODE_OPTIONS.map((mode) => {
             const isActive = selectedMode === mode.id;
+            const duration = mode.id === 'blitz' ? 60 : mode.id === 'standard' ? 120 : 180;
             return (
               <Pressable
                 key={mode.id}
-                onPress={() => setSelectedMode(mode.id)}
+                onPress={() => {
+                  setSelectedMode(mode.id);
+                  router.push({ pathname: '/game', params: { duration: String(duration) } });
+                }}
                 style={[
                   styles.modeTile,
                   {
@@ -128,7 +133,9 @@ export default function HomeScreen() {
           })}
         </View>
 
-        <Pressable style={[styles.friendsButton, { backgroundColor: theme.primary }]}>
+        <Pressable
+          style={[styles.friendsButton, { backgroundColor: theme.primary }]}
+          onPress={() => {}}>
           <View style={styles.friendsContent}>
             <View style={[styles.friendsIconWrap, { backgroundColor: theme.card }]}>
               <Ionicons name="people-outline" size={22} color={theme.primary} />
