@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
-import { Image, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { doc, getDoc } from 'firebase/firestore';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { auth, db } from '@/lib/firebase';
 
 type ModeOption = {
   id: string;
@@ -27,6 +29,9 @@ export default function HomeScreen() {
   const theme = Colors[colorScheme ?? 'light'];
   const [selectedMode, setSelectedMode] = useState<ModeOption['id']>('blitz');
   const insets = useSafeAreaInsets();
+  const [userName, setUserName] = useState('Math Whiz');
+  const [highScore, setHighScore] = useState(0);
+  const [gamesPlayed, setGamesPlayed] = useState(0);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -35,11 +40,35 @@ export default function HomeScreen() {
     return 'Good Evening';
   }, []);
 
-  const mockUser = {
-    name: 'Rayad',
-    avatar: null as string | null,
-    highestScore: 2480,
-    gamesPlayed: 136,
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (user) {
+      setUserName(user.displayName || 'Math Whiz');
+      fetchStats(user.uid);
+    } else {
+      setUserName('Math Whiz');
+      setHighScore(0);
+      setGamesPlayed(0);
+    }
+  }, []);
+
+  const fetchStats = async (uid: string) => {
+    try {
+      const ref = doc(db, 'users', uid);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const data = snap.data();
+        setHighScore(typeof data.highScore === 'number' ? data.highScore : 0);
+        setGamesPlayed(typeof data.gamesPlayed === 'number' ? data.gamesPlayed : 0);
+      } else {
+        setHighScore(0);
+        setGamesPlayed(0);
+      }
+    } catch (err) {
+      console.error('Failed to load home stats', err);
+      setHighScore(0);
+      setGamesPlayed(0);
+    }
   };
 
   return (
@@ -59,15 +88,13 @@ export default function HomeScreen() {
         <View style={styles.headerRow}>
           <View style={styles.avatarRow}>
             <View style={[styles.avatar, { backgroundColor: theme.primaryMuted }]}>
-              {mockUser.avatar ? (
-                <Image source={{ uri: mockUser.avatar }} style={styles.avatarImage} />
-              ) : (
-                <Text style={[styles.avatarInitial, { color: theme.primary }]}>{mockUser.name.charAt(0)}</Text>
-              )}
+              <Text style={[styles.avatarInitial, { color: theme.primary }]}>
+                {userName.charAt(0)}
+              </Text>
             </View>
             <View>
               <Text style={[styles.greeting, { color: theme.textMuted }]}>{greeting}</Text>
-              <Text style={[styles.username, { color: theme.text }]}>{mockUser.name}</Text>
+              <Text style={[styles.username, { color: theme.text }]}>{userName}</Text>
             </View>
           </View>
         </View>
@@ -75,12 +102,12 @@ export default function HomeScreen() {
         <View style={styles.statsRow}>
           <View style={[styles.statCard, { backgroundColor: theme.primary, shadowColor: theme.shadow }]}>
             <Text style={[styles.statLabel, styles.statLabelLight]}>Highest Score</Text>
-            <Text style={[styles.statValue, styles.statValueLight]}>{mockUser.highestScore.toLocaleString()}</Text>
+            <Text style={[styles.statValue, styles.statValueLight]}>{highScore.toLocaleString()}</Text>
             <Text style={[styles.statSubLabel, styles.statLabelLight]}>All Time</Text>
           </View>
           <View style={[styles.statCard, { backgroundColor: theme.card, shadowColor: theme.shadow }]}>
             <Text style={[styles.statLabel, { color: theme.textMuted }]}>Games</Text>
-            <Text style={[styles.statValue, { color: theme.text }]}>{mockUser.gamesPlayed}</Text>
+            <Text style={[styles.statValue, { color: theme.text }]}>{gamesPlayed}</Text>
             <Text style={[styles.statSubLabel, { color: theme.textMuted }]}>Total Played</Text>
           </View>
         </View>

@@ -1,17 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Animated,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  collection,
+  doc,
+  getDoc,
+  increment,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { auth, db } from '@/lib/firebase';
 
 type Question = { prompt: string; answer: number };
 
@@ -141,6 +145,8 @@ export default function GameScreen() {
   const [isWrong, setIsWrong] = useState(false);
   const shake = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startedAtRef = useRef<number>(Date.now());
+  const finishedRef = useRef(false);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -157,16 +163,94 @@ export default function GameScreen() {
     }
   }, [timeLeft]);
 
-  const finishGame = () => {
+  const finishGame = async () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
     if (timerRef.current) clearInterval(timerRef.current);
     const accuracy = attempts === 0 ? 0 : Math.round((solved / attempts) * 100);
+    let bestScore = Math.max(score, 0);
+
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        const uid = user.uid;
+        const gameRef = doc(collection(db, 'users', uid, 'games'));
+        const userRef = doc(db, 'users', uid);
+        const userSnap = await getDoc(userRef);
+        const prevHigh =
+          userSnap.exists() && typeof userSnap.data().highScore === 'number'
+            ? userSnap.data().highScore
+            : 0;
+        bestScore = Math.max(prevHigh, score);
+
+        await setDoc(
+          gameRef,
+          {
+            score,
+            correct: solved,
+            attempts,
+            accuracy,
+            durationSec: totalTime,
+            startedAt: new Date(startedAtRef.current),
+            endedAt: new Date(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        await setDoc(
+          userRef,
+          {
+            email: user.email ?? '',
+            displayName: user.displayName ?? '',
+            highScore: bestScore,
+            lastScore: score,
+            lastAccuracy: accuracy,
+            createdAt: userSnap.exists()
+              ? userSnap.data().createdAt ?? serverTimestamp()
+              : serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+
+        await updateDoc(userRef, {
+          totalScore: increment(score),
+          totalCorrect: increment(solved),
+          totalAttempts: increment(attempts),
+          gamesPlayed: increment(1),
+          highScore: bestScore,
+          lastScore: score,
+          lastAccuracy: accuracy,
+        }).catch(async () => {
+          await setDoc(
+            userRef,
+            {
+              totalScore: score,
+              totalCorrect: solved,
+              totalAttempts: attempts,
+              gamesPlayed: 1,
+              highScore: bestScore,
+              lastScore: score,
+              lastAccuracy: accuracy,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        });
+      } catch (err) {
+        console.error('Failed to persist game', err);
+      }
+    }
+
     router.replace({
       pathname: '/result',
       params: {
         score: String(score),
         accuracy: String(accuracy),
         solved: String(solved),
-        best: String(Math.max(score, 1500)),
+        best: String(bestScore),
         delta: String(score - 1120),
       },
     });

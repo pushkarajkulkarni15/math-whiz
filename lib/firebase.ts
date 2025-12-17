@@ -8,8 +8,13 @@ import {
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   updateProfile,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  updatePassword,
+  signOut,
   type Auth,
 } from "firebase/auth";
+import { getFirestore, initializeFirestore } from "firebase/firestore";
 
 import { firebaseConfig } from "../firebase.config";
 
@@ -17,7 +22,7 @@ if (!firebaseConfig?.apiKey) {
   throw new Error("Firebase config missing. Create firebase.config.ts from firebase.config.example.ts.");
 }
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 let auth: Auth;
 try {
@@ -28,10 +33,19 @@ try {
   auth = getAuth(app);
 }
 
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+  useFetchStreams: false,
+});
+
 export {
   auth,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   updateProfile,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  updatePassword,
+  signOut,
 };
