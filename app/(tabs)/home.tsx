@@ -162,7 +162,7 @@ export default function HomeScreen() {
 
         <Pressable
           style={[styles.friendsButton, { backgroundColor: theme.primary }]}
-          onPress={() => {}}>
+          onPress={() => router.push('/friends')}>
           <View style={styles.friendsContent}>
             <View style={[styles.friendsIconWrap, { backgroundColor: theme.card }]}>
               <Ionicons name="people-outline" size={22} color={theme.primary} />

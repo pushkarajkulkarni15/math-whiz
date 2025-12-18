@@ -17,6 +17,14 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="game" options={{ headerShown: false }} />
           <Stack.Screen name="result" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="friends"
+            options={{ headerShown: false, presentation: 'transparentModal', animation: 'fade' }}
+          />
+          <Stack.Screen name="room-host" options={{ headerShown: false }} />
+          <Stack.Screen name="room-join" options={{ headerShown: false }} />
+          <Stack.Screen name="room-wait" options={{ headerShown: false }} />
+          <Stack.Screen name="room-result" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="auto" />

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +8,8 @@ import {
   doc,
   getDoc,
   increment,
+  onSnapshot,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -32,7 +34,18 @@ const operations = [
 ] as const;
 type Operation = (typeof operations)[number];
 
-const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
+const mulberry32 = (seed: number) => {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const randInt = (rng: () => number, min: number, max: number) =>
+  Math.floor(rng() * (max - min + 1)) + min;
 
 const gcd = (a: number, b: number): number => (b === 0 ? Math.abs(a) : gcd(b, a % b));
 const lcm = (a: number, b: number): number => Math.abs((a * b) / gcd(a, b));
@@ -53,63 +66,63 @@ const highestPrimeFactor = (n: number): number => {
   return maxPrime;
 };
 
-const generateQuestion = (): Question => {
-  const op = operations[randInt(0, operations.length - 1)];
+const generateQuestion = (rng: () => number): Question => {
+  const op = operations[randInt(rng, 0, operations.length - 1)];
   switch (op) {
     case 'add': {
-      const a = randInt(25, 150);
-      const b = randInt(15, 120);
+      const a = randInt(rng, 25, 150);
+      const b = randInt(rng, 15, 120);
       return { prompt: `${a} + ${b}`, answer: a + b };
     }
     case 'sub': {
-      const a = randInt(80, 180);
-      const b = randInt(20, 90);
+      const a = randInt(rng, 80, 180);
+      const b = randInt(rng, 20, 90);
       const bigger = Math.max(a, b);
       const smaller = Math.min(a, b);
       return { prompt: `${bigger} - ${smaller}`, answer: bigger - smaller };
     }
     case 'mul': {
-      const a = randInt(7, 15);
-      const b = randInt(6, 14);
+      const a = randInt(rng, 7, 15);
+      const b = randInt(rng, 6, 14);
       return { prompt: `${a} × ${b}`, answer: a * b };
     }
     case 'div': {
-      const divisor = randInt(3, 12);
-      const quotient = randInt(4, 16);
+      const divisor = randInt(rng, 3, 12);
+      const quotient = randInt(rng, 4, 16);
       const dividend = divisor * quotient;
       return { prompt: `${dividend} ÷ ${divisor}`, answer: quotient };
     }
     case 'lcm': {
-      const a = randInt(4, 12);
-      const b = randInt(5, 14);
+      const a = randInt(rng, 4, 12);
+      const b = randInt(rng, 5, 14);
       return { prompt: `LCM(${a}, ${b})`, answer: lcm(a, b) };
     }
     case 'hcf': {
-      const base = randInt(2, 12);
-      const a = base * randInt(4, 12);
-      const b = base * randInt(3, 11);
+      const base = randInt(rng, 2, 12);
+      const a = base * randInt(rng, 4, 12);
+      const b = base * randInt(rng, 3, 11);
       return { prompt: `HCF(${a}, ${b})`, answer: gcd(a, b) };
     }
     case 'hpf': {
-      const num = randInt(60, 220);
+      const num = randInt(rng, 60, 220);
       return { prompt: `Highest prime factor of ${num}`, answer: highestPrimeFactor(num) };
     }
     case 'square': {
-      const isRoot = Math.random() < 0.5;
+      const isRoot = rng() < 0.5;
       if (isRoot) {
-        const n = randInt(6, 15);
+        const n = randInt(rng, 6, 15);
         return { prompt: `√${n * n}`, answer: n };
       }
-      const n = randInt(9, 18);
+      const n = randInt(rng, 9, 18);
       return { prompt: `${n}²`, answer: n * n };
     }
     case 'cube': {
-      const isRoot = Math.random() < 0.4;
+      const isRoot = rng() < 0.4;
       if (isRoot) {
-        const n = randInt(2, 6);
+        const n = randInt(rng, 2, 6);
         return { prompt: `∛${n * n * n}`, answer: n };
       }
-      const n = randInt(3, 8);
+      const n = randInt(rng, 3, 8);
       return { prompt: `${n}³`, answer: n * n * n };
     }
     default:
@@ -129,14 +142,27 @@ export default function GameScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
-  const { duration } = useLocalSearchParams<{ duration?: string }>();
+  const { duration, seed, room } = useLocalSearchParams<{
+    duration?: string;
+    seed?: string;
+    room?: string;
+  }>();
 
   const totalTime = useMemo(() => {
     const parsed = duration ? parseInt(duration, 10) : 60;
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 60;
   }, [duration]);
 
-  const [question, setQuestion] = useState<Question>(generateQuestion());
+  const seedNumber = useMemo(() => {
+    if (!seed) return null;
+    const parsed = parseInt(seed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }, [seed]);
+
+  const rng = useMemo(() => (seedNumber ? mulberry32(seedNumber) : Math.random), [seedNumber]);
+  const roomCode = useMemo(() => (room ? String(room).trim().toUpperCase() : null), [room]);
+
+  const [question, setQuestion] = useState<Question>(() => generateQuestion(rng));
   const [input, setInput] = useState('');
   const [score, setScore] = useState(0);
   const [solved, setSolved] = useState(0);
@@ -147,6 +173,7 @@ export default function GameScreen() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startedAtRef = useRef<number>(Date.now());
   const finishedRef = useRef(false);
+  const [roomHostUid, setRoomHostUid] = useState<string | null>(null);
 
   useEffect(() => {
     timerRef.current = setInterval(() => {
@@ -156,6 +183,25 @@ export default function GameScreen() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!roomCode) return;
+    const roomRef = doc(db, 'rooms', roomCode);
+    const unsub = onSnapshot(
+      roomRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data() as any;
+        setRoomHostUid(typeof data.hostUid === 'string' ? data.hostUid : null);
+        if (data.status === 'ended' && !finishedRef.current) {
+          finishGame();
+        }
+      },
+      (err) => console.error('Room watch error', err)
+    );
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode]);
 
   useEffect(() => {
     if (timeLeft === 0) {
@@ -239,9 +285,65 @@ export default function GameScreen() {
             { merge: true }
           );
         });
+
+        if (roomCode) {
+          await runTransaction(db, async (tx) => {
+            const roomRef = doc(db, 'rooms', roomCode);
+            const roomSnap = await tx.get(roomRef);
+            if (!roomSnap.exists()) return;
+            const roomData = roomSnap.data() as any;
+
+            const playerRef = doc(db, 'rooms', roomCode, 'players', uid);
+            const playerSnap = await tx.get(playerRef);
+            const alreadyFinished = playerSnap.exists() && !!(playerSnap.data() as any).finishedAt;
+
+            tx.set(
+              playerRef,
+              {
+                uid,
+                displayName: user.displayName ?? 'Math Wizard',
+                score,
+                attempts,
+                correct: solved,
+                accuracy,
+                finishedAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+
+            if (roomData.status !== 'in_progress') return;
+            if (roomData.endedReason) return;
+            if (alreadyFinished) return;
+
+            const playerCount = typeof roomData.playerCount === 'number' ? roomData.playerCount : null;
+            if (!playerCount) return;
+
+            const finishedCount = typeof roomData.finishedCount === 'number' ? roomData.finishedCount : 0;
+            const nextFinished = finishedCount + 1;
+
+            const updates: Record<string, unknown> = {
+              finishedCount: nextFinished,
+              updatedAt: serverTimestamp(),
+            };
+
+            if (nextFinished >= playerCount) {
+              updates.status = 'ended';
+              updates.endedReason = 'all_finished';
+              updates.endedAt = serverTimestamp();
+            }
+
+            tx.update(roomRef, updates);
+          });
+        }
       } catch (err) {
         console.error('Failed to persist game', err);
       }
+    }
+
+    if (roomCode) {
+      router.replace({ pathname: '/room-result', params: { code: roomCode } });
+      return;
     }
 
     router.replace({
@@ -254,6 +356,45 @@ export default function GameScreen() {
         delta: String(score - 1120),
       },
     });
+  };
+
+  const handleExit = () => {
+    if (!roomCode) {
+      router.replace('/(tabs)/home');
+      return;
+    }
+    const user = auth.currentUser;
+    const isHost = !!user && !!roomHostUid && user.uid === roomHostUid;
+    Alert.alert(
+      isHost ? 'End match for everyone?' : 'Leave match?',
+      isHost
+        ? 'If you leave, the match will end for all players.'
+        : 'If you leave, your current score will be submitted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isHost ? 'End Match' : 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (isHost) {
+                await updateDoc(doc(db, 'rooms', roomCode), {
+                  status: 'ended',
+                  endedReason: 'host_left',
+                  endedAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                  locked: true,
+                });
+              }
+            } catch (err) {
+              console.error('End room failed', err);
+            } finally {
+              finishGame();
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleKeyPress = (key: string) => {
@@ -278,7 +419,7 @@ export default function GameScreen() {
       const gain = 10;
       setSolved((c) => c + 1);
       setScore((s) => s + gain);
-      setQuestion(generateQuestion());
+      setQuestion(generateQuestion(rng));
       setInput('');
     } else {
       setIsWrong(true);
@@ -310,7 +451,7 @@ export default function GameScreen() {
           },
         ]}>
         <View style={styles.topRow}>
-          <Pressable style={styles.iconButton} onPress={() => router.replace('/(tabs)/home')}>
+          <Pressable style={styles.iconButton} onPress={handleExit}>
             <Ionicons name="close" size={22} color={theme.text} />
           </Pressable>
           <View style={styles.topMetrics}>
