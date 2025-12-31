@@ -91,6 +91,14 @@ export default function DashboardScreen() {
 
   const accuracyPct = stats.totalAttempts === 0 ? 0 : Math.round((stats.totalCorrect / stats.totalAttempts) * 100);
   const avgScore = stats.gamesPlayed === 0 ? 0 : Math.round(stats.totalScore / stats.gamesPlayed);
+  const lastGame = recentGames[0];
+  const prevGame = recentGames[1];
+  const accuracyDelta = prevGame && lastGame ? Math.round(lastGame.accuracy - prevGame.accuracy) : 0;
+  const avgScoreDeltaPct =
+    prevGame && lastGame && prevGame.score > 0
+      ? Math.round(((lastGame.score - prevGame.score) / prevGame.score) * 100)
+      : 0;
+  const gamesDelta = stats.gamesPlayed > 0 ? 1 : 0;
   const avgDuration = useMemo(() => {
     if (recentGames.length === 0) return 0;
     const total = recentGames.reduce((acc, g) => acc + g.durationSec, 0);
@@ -98,7 +106,7 @@ export default function DashboardScreen() {
   }, [recentGames]);
 
   const trendPoints = useMemo(() => {
-    if (recentGames.length === 0) return [70, 72, 75, 78, 80, 83, 86];
+    if (recentGames.length === 0) return [0, 0];
     const pts = recentGames
       .slice()
       .reverse()
@@ -205,8 +213,20 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.gridRow}>
-          <StatCard icon="poll" label="Avg. Score" value={avgScore.toLocaleString()} pill="+5%" theme={theme} />
-          <StatCard icon="controller-classic-outline" label="Total Games" value={stats.gamesPlayed.toString()} pill="+2" theme={theme} />
+          <StatCard
+            icon="poll"
+            label="Avg. Score"
+            value={avgScore.toLocaleString()}
+            pill={`${avgScoreDeltaPct > 0 ? '+' : ''}${avgScoreDeltaPct}%`}
+            theme={theme}
+          />
+          <StatCard
+            icon="controller-classic-outline"
+            label="Total Games"
+            value={stats.gamesPlayed.toString()}
+            pill={`+${gamesDelta}`}
+            theme={theme}
+          />
         </View>
         <View style={styles.gridRow}>
           <StatCard
@@ -231,7 +251,9 @@ export default function DashboardScreen() {
               <Text style={[styles.chartTitle, { color: theme.text }]}>Accuracy Trend</Text>
               <View style={styles.chartSubRow}>
                 <Text style={[styles.chartValue, { color: theme.text }]}>{accuracyPct}%</Text>
-                <Text style={styles.chartDelta}>+4%</Text>
+                <Text style={styles.chartDelta}>
+                  {accuracyDelta >= 0 ? `+${accuracyDelta}%` : `${accuracyDelta}%`}
+                </Text>
               </View>
             </View>
             <View style={[styles.badgeSoft, { backgroundColor: theme.primaryMuted }]}>

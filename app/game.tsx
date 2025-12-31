@@ -168,6 +168,7 @@ export default function GameScreen() {
   const [solved, setSolved] = useState(0);
   const [attempts, setAttempts] = useState(0);
   const [timeLeft, setTimeLeft] = useState(totalTime);
+  const [endTimeMs, setEndTimeMs] = useState<number | null>(null);
   const [isWrong, setIsWrong] = useState(false);
   const shake = useRef(new Animated.Value(0)).current;
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -175,14 +176,29 @@ export default function GameScreen() {
   const finishedRef = useRef(false);
   const [roomHostUid, setRoomHostUid] = useState<string | null>(null);
 
+  // Initialize end time for solo play; for rooms it will be set from Firestore snapshot.
   useEffect(() => {
+    if (roomCode) return;
+    setEndTimeMs(Date.now() + totalTime * 1000);
+  }, [roomCode, totalTime]);
+
+  // Drive timer from a shared end timestamp to keep all players in sync.
+  useEffect(() => {
+    if (!endTimeMs) return;
+    if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      setTimeLeft((t) => Math.max(t - 1, 0));
-    }, 1000);
+      const remainingMs = endTimeMs - Date.now();
+      const next = Math.max(0, Math.ceil(remainingMs / 1000));
+      setTimeLeft(next);
+      if (remainingMs <= 0) {
+        finishGame();
+      }
+    }, 500);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endTimeMs]);
 
   useEffect(() => {
     if (!roomCode) return;
@@ -193,6 +209,23 @@ export default function GameScreen() {
         if (!snap.exists()) return;
         const data = snap.data() as any;
         setRoomHostUid(typeof data.hostUid === 'string' ? data.hostUid : null);
+
+        // Align end time for all players using the host's startedAt timestamp.
+        const startTs = data.startedAt?.toMillis?.();
+        const durationDoc = typeof data.durationSec === 'number' ? data.durationSec : totalTime;
+        if (startTs) {
+          const candidateEnd = startTs + durationDoc * 1000;
+          if (!endTimeMs || Math.abs(candidateEnd - endTimeMs) > 1000) {
+            setEndTimeMs(candidateEnd);
+          }
+          startedAtRef.current = startTs;
+        } else if (data.status === 'in_progress' && !endTimeMs) {
+          // Fallback if startedAt is missing: start now to avoid desync.
+          const nowEnd = Date.now() + durationDoc * 1000;
+          setEndTimeMs(nowEnd);
+          startedAtRef.current = Date.now();
+        }
+
         if (data.status === 'ended' && !finishedRef.current) {
           finishGame();
         }
@@ -201,7 +234,7 @@ export default function GameScreen() {
     );
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode]);
+  }, [roomCode, endTimeMs, totalTime]);
 
   useEffect(() => {
     if (timeLeft === 0) {
@@ -214,6 +247,9 @@ export default function GameScreen() {
     finishedRef.current = true;
     if (timerRef.current) clearInterval(timerRef.current);
     const accuracy = attempts === 0 ? 0 : Math.round((solved / attempts) * 100);
+    const durationToSave = endTimeMs
+      ? Math.max(1, Math.round((endTimeMs - startedAtRef.current) / 1000))
+      : totalTime;
     let bestScore = Math.max(score, 0);
     let prevLastScore = 0;
 
@@ -241,7 +277,7 @@ export default function GameScreen() {
             correct: solved,
             attempts,
             accuracy,
-            durationSec: totalTime,
+            durationSec: durationToSave,
             startedAt: new Date(startedAtRef.current),
             endedAt: new Date(),
             createdAt: serverTimestamp(),
@@ -443,7 +479,15 @@ export default function GameScreen() {
     }
   };
 
-  const progress = 1 - timeLeft / totalTime;
+  const effectiveDuration = useMemo(() => {
+    if (endTimeMs) {
+      const dur = Math.round((endTimeMs - startedAtRef.current) / 1000);
+      if (dur > 0) return dur;
+    }
+    return totalTime;
+  }, [endTimeMs, totalTime]);
+
+  const progress = Math.min(1, Math.max(0, 1 - timeLeft / effectiveDuration));
   const minutes = Math.floor(timeLeft / 60);
   const seconds = timeLeft % 60;
   const timeLabel = `${minutes}:${seconds.toString().padStart(2, '0')}`;
