@@ -11,6 +11,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import {
   collection,
   doc,
@@ -146,9 +147,15 @@ export default function RoomHostScreen() {
     }
   };
 
-  const handleCopy = () => {
-    codeInputRef.current?.focus();
-    Alert.alert('Room code ready', 'Long-press the code to copy.');
+  const handleCopy = async () => {
+    if (!code) return;
+    try {
+      await Clipboard.setStringAsync(code);
+      Alert.alert('Copied', 'Room code copied to clipboard. Share it with your friends.');
+    } catch (err) {
+      console.error('Copy failed', err);
+      Alert.alert('Copy failed', 'Please copy the code manually.');
+    }
   };
 
   const handleStart = async () => {

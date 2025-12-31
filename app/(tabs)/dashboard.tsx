@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import {
@@ -32,6 +32,8 @@ type Stats = {
   totalCorrect: number;
   totalAttempts: number;
   streak: number;
+  groupGames?: number;
+  soloGames?: number;
 };
 
 const PlaceholderAvatar = ({ name, color }: { name: string; color: string }) => {
@@ -72,6 +74,7 @@ export default function DashboardScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
+  const [chartSize, setChartSize] = useState({ width: 0, height: 0 });
 
   const [stats, setStats] = useState<Stats>({
     highScore: 0,
@@ -80,6 +83,8 @@ export default function DashboardScreen() {
     totalCorrect: 0,
     totalAttempts: 0,
     streak: 0,
+    groupGames: 0,
+    soloGames: 0,
   });
   const [recentGames, setRecentGames] = useState<GameSummary[]>([]);
   const [displayName, setDisplayName] = useState('Math Wizard');
@@ -94,11 +99,24 @@ export default function DashboardScreen() {
 
   const trendPoints = useMemo(() => {
     if (recentGames.length === 0) return [70, 72, 75, 78, 80, 83, 86];
-    return recentGames
+    const pts = recentGames
       .slice()
       .reverse()
       .map((g) => Math.max(0, Math.min(100, Math.round(g.accuracy))));
+    // Ensure we always have at least 2 points to draw a line cleanly
+    return pts.length === 1 ? [...pts, pts[0]] : pts;
   }, [recentGames]);
+
+  const chartCoords = useMemo(() => {
+    if (chartSize.width === 0 || chartSize.height === 0 || trendPoints.length === 0) return [];
+    const maxIndex = Math.max(trendPoints.length - 1, 1);
+    return trendPoints.map((val, idx) => {
+      const clamped = Math.max(0, Math.min(100, val));
+      const x = (idx / maxIndex) * chartSize.width;
+      const y = chartSize.height - (clamped / 100) * chartSize.height;
+      return { x, y };
+    });
+  }, [chartSize, trendPoints]);
 
   const fetchData = useCallback(async () => {
     const user = auth.currentUser;
@@ -118,6 +136,8 @@ export default function DashboardScreen() {
           totalCorrect: typeof data.totalCorrect === 'number' ? data.totalCorrect : prev.totalCorrect,
           totalAttempts: typeof data.totalAttempts === 'number' ? data.totalAttempts : prev.totalAttempts,
           streak: typeof data.streak === 'number' ? data.streak : prev.streak,
+          groupGames: typeof data.groupGames === 'number' ? data.groupGames : prev.groupGames,
+          soloGames: typeof data.soloGames === 'number' ? data.soloGames : prev.soloGames,
         }));
       }
 
@@ -167,9 +187,7 @@ export default function DashboardScreen() {
               <Text style={[styles.username, { color: theme.text }]}>{displayName}</Text>
             </View>
           </View>
-          <Pressable style={[styles.iconCircle, { borderColor: theme.border }]}>
-            <Ionicons name="settings-outline" size={20} color={theme.text} />
-          </Pressable>
+          <View style={{ width: 40 }} />
         </View>
 
         <View style={[styles.highCard, { backgroundColor: theme.primary, shadowColor: theme.shadow }]}>
@@ -192,13 +210,19 @@ export default function DashboardScreen() {
         </View>
         <View style={styles.gridRow}>
           <StatCard
-            icon="timer-outline"
-            label="Avg. Time"
-            value={avgDuration ? `${avgDuration.toFixed(1)}s` : '--'}
+            icon="account-group-outline"
+            label="Group Games"
+            value={(stats.groupGames ?? 0).toString()}
             pill="+0"
             theme={theme}
           />
-          <StatCard icon="fire" label="Streak" value={`${Math.max(stats.streak, 0)} Days`} pill="+1" theme={theme} />
+          <StatCard
+            icon="account-outline"
+            label="Solo Games"
+            value={(stats.soloGames ?? 0).toString()}
+            pill="+0"
+            theme={theme}
+          />
         </View>
 
         <View style={[styles.chartCard, { backgroundColor: theme.card, shadowColor: theme.shadow }]}>
@@ -215,29 +239,62 @@ export default function DashboardScreen() {
             </View>
           </View>
           <View style={styles.chartBody}>
-            {trendPoints.map((point, idx) => {
-              const x = (idx / Math.max(trendPoints.length - 1, 1)) * 100;
-              const y = Math.max(5, Math.min(95, point));
-              return (
-                <View key={idx} style={[styles.chartDotWrap, { left: `${x}%` }]}>
-                  <View style={[styles.chartDot, { bottom: `${y}%`, backgroundColor: theme.primary }]} />
-                  {idx > 0 && (
-                    <View
-                      style={[
-                        styles.chartLine,
-                        {
-                          backgroundColor: theme.primary,
-                          width: `${100 / Math.max(trendPoints.length - 1, 1)}%`,
-                          left: '-50%',
-                          bottom: `${y - 50}%`,
-                        },
-                      ]}
-                    />
-                  )}
-                </View>
-              );
-            })}
-            <View style={[styles.chartGradient, { backgroundColor: theme.primaryMuted }]} />
+            <View
+              style={[styles.plotArea, { backgroundColor: theme.inputBackground }]}
+              onLayout={(e: LayoutChangeEvent) => {
+                const { width, height } = e.nativeEvent.layout;
+                if (width !== chartSize.width || height !== chartSize.height) {
+                  setChartSize({ width, height });
+                }
+              }}>
+              <View style={[styles.chartGradient, { backgroundColor: theme.primaryMuted }]} />
+              {chartCoords.map((point, idx) => {
+                if (idx === 0) return null;
+                const prev = chartCoords[idx - 1];
+                const dx = point.x - prev.x;
+                const dy = point.y - prev.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+                const centerX = (point.x + prev.x) / 2;
+                const centerY = (point.y + prev.y) / 2;
+                return (
+                  <View
+                    key={`line-${idx}`}
+                    style={[
+                      styles.chartConnector,
+                      {
+                        width: length,
+                        left: centerX - length / 2,
+                        top: centerY - 1.5,
+                        backgroundColor: theme.primary,
+                        transform: [{ rotateZ: `${angle}rad` }],
+                      },
+                    ]}
+                  />
+                );
+              })}
+              {chartCoords.map((point, idx) => (
+                <View
+                  key={`dot-${idx}`}
+                  style={[
+                    styles.chartDot,
+                    {
+                      left: point.x - 6,
+                      top: point.y - 6,
+                      backgroundColor: theme.background,
+                      borderColor: theme.primary,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+            <View style={styles.axisX}>
+              {['1', '2', '3', '4', '5', '6', '7'].map((d) => (
+                <Text key={d} style={[styles.axisLabel, { color: theme.textMuted }]}>
+                  {d}
+                </Text>
+              ))}
+            </View>
           </View>
         </View>
 
@@ -447,34 +504,34 @@ const styles = StyleSheet.create({
   },
   chartBody: {
     marginTop: 12,
-    height: 140,
     borderRadius: 14,
-    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 10,
     backgroundColor: 'rgba(0,0,0,0.02)',
   },
-  chartDotWrap: {
-    position: 'absolute',
-    bottom: 0,
-    width: 0,
-    height: '100%',
+  axisX: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6, paddingHorizontal: 4 },
+  axisLabel: { fontSize: 11, fontWeight: '700' },
+  plotArea: {
+    height: 170,
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 12,
   },
   chartDot: {
     position: 'absolute',
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    left: -5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 3,
   },
-  chartLine: {
-    position: 'absolute',
-    height: 2,
-  },
+  chartConnector: { position: 'absolute', height: 3, borderRadius: 6 },
   chartGradient: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    top: '40%',
+    top: '45%',
     opacity: 0.25,
   },
   recentHeader: {

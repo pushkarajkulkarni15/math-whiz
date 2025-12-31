@@ -215,6 +215,7 @@ export default function GameScreen() {
     if (timerRef.current) clearInterval(timerRef.current);
     const accuracy = attempts === 0 ? 0 : Math.round((solved / attempts) * 100);
     let bestScore = Math.max(score, 0);
+    let prevLastScore = 0;
 
     const user = auth.currentUser;
     if (user) {
@@ -226,6 +227,10 @@ export default function GameScreen() {
         const prevHigh =
           userSnap.exists() && typeof userSnap.data().highScore === 'number'
             ? userSnap.data().highScore
+            : 0;
+        prevLastScore =
+          userSnap.exists() && typeof userSnap.data().lastScore === 'number'
+            ? userSnap.data().lastScore
             : 0;
         bestScore = Math.max(prevHigh, score);
 
@@ -253,6 +258,8 @@ export default function GameScreen() {
             highScore: bestScore,
             lastScore: score,
             lastAccuracy: accuracy,
+            groupGames: userSnap.exists() && typeof userSnap.data().groupGames === 'number' ? userSnap.data().groupGames : 0,
+            soloGames: userSnap.exists() && typeof userSnap.data().soloGames === 'number' ? userSnap.data().soloGames : 0,
             createdAt: userSnap.exists()
               ? userSnap.data().createdAt ?? serverTimestamp()
               : serverTimestamp(),
@@ -266,6 +273,8 @@ export default function GameScreen() {
           totalCorrect: increment(solved),
           totalAttempts: increment(attempts),
           gamesPlayed: increment(1),
+          groupGames: increment(roomCode ? 1 : 0),
+          soloGames: increment(roomCode ? 0 : 1),
           highScore: bestScore,
           lastScore: score,
           lastAccuracy: accuracy,
@@ -277,6 +286,8 @@ export default function GameScreen() {
               totalCorrect: solved,
               totalAttempts: attempts,
               gamesPlayed: 1,
+              groupGames: roomCode ? 1 : 0,
+              soloGames: roomCode ? 0 : 1,
               highScore: bestScore,
               lastScore: score,
               lastAccuracy: accuracy,
@@ -353,7 +364,7 @@ export default function GameScreen() {
         accuracy: String(accuracy),
         solved: String(solved),
         best: String(bestScore),
-        delta: String(score - 1120),
+        delta: String(score - prevLastScore),
       },
     });
   };

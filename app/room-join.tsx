@@ -12,6 +12,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc } from 'firebase/firestore';
 
 import { Colors } from '@/constants/theme';
@@ -43,9 +44,21 @@ export default function RoomJoinScreen() {
     inputRef.current?.focus();
   };
 
-  const handlePaste = () => {
-    focusInput();
-    Alert.alert('Paste Code', 'Tap the input and paste the 6-character room code.');
+  const handlePaste = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      const normalized = normalizeCode(text);
+      if (normalized.length === 6) {
+        setCode(normalized);
+      } else {
+        Alert.alert('Invalid code', 'Clipboard does not contain a valid 6-character code.');
+      }
+    } catch (err) {
+      console.error('Paste failed', err);
+      Alert.alert('Paste failed', 'Could not read your clipboard.');
+    } finally {
+      focusInput();
+    }
   };
 
   const joinRoom = async () => {
@@ -238,4 +251,3 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 14 },
   footerLink: { fontSize: 14, fontWeight: '900' },
 });
-
